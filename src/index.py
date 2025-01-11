@@ -5,19 +5,18 @@ import base64
 from urls import *
 
 
-# Отправка POST запросов
 def send_post(url, headers=None, json_data=None):
     response = requests.post(url, headers=headers, json=json_data)
     if response.status_code == 200:
         return response.json()
     return None
 
-# Получение объекта из бакета
+
 def get_object_from_bucket(object_key):
     with open(os.path.join(MOUNT_POINT, object_key), "r") as file:
         return file.read()
 
-# Обработка текста через гпт
+
 def get_answer_from_gpt(question):
     instruction = get_object_from_bucket(BUCKET_OBJECT_KEY)
     if not instruction:
@@ -37,7 +36,7 @@ def get_answer_from_gpt(question):
         return final_alternatives[0]["message"].get("text") if final_alternatives else None
     return None
 
-# Распознавание текста с фото
+
 def recognize_text(base64_image):
     data = {
         "content": base64_image,
@@ -55,17 +54,17 @@ def recognize_text(base64_image):
         return text.replace("-\n", "").replace("\n", " ") if text else None
     return None
 
-# Получения пути файла
+
 def get_file_path(file_id):
     file_info = send_post(f"{TELEGRAM_API_URL}/getFile?file_id={file_id}")
     return file_info["result"]["file_path"] if file_info else None
 
-# Получения изображения по пути
+
 def get_image(file_path):
     file_url = f"{TELEGRAM_FILE_URL}/{file_path}"
     return requests.get(file_url).content
 
-# Обработчик
+
 def process_update(update):
 
     message = update["message"]
@@ -94,7 +93,7 @@ def process_update(update):
     return send_message(chat_id, "Я могу обработать только текстовое сообщение или фотографию.")
 
 
-# Отправка сообщения
+
 def send_message(chat_id, text):
     send_post(f"{TELEGRAM_API_URL}/sendMessage", json_data={"chat_id": chat_id, "text": text})
 

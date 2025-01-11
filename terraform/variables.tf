@@ -1,4 +1,3 @@
-# Переменные
 
 variable "cloud_id" {
   description = "ID облака Yandex Cloud"

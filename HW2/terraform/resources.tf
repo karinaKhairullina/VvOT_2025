@@ -1,30 +1,41 @@
-# Существующий сервисный аккаунт "adm"
-data "yandex_iam_service_account" "adm" {
-  name = "adm"
+
+// Создание сервисного аккаунта
+resource "yandex_iam_service_account" "sa" {
+  name = "vvot00-service-account"
 }
 
-# Привязка прав для сервисного аккаунта adm
-resource "yandex_resourcemanager_folder_iam_member" "adm_storage_editor_iam" {
+// Назначение роли сервисному аккаунту
+resource "yandex_resourcemanager_folder_iam_member" "sa-admin" {
   folder_id = var.folder_id
-  role      = "storage.editor"
-  member    = "serviceAccount:${data.yandex_iam_service_account.adm.id}"
+  role      = "storage.admin"
+  member    = "serviceAccount:${yandex_iam_service_account.sa.id}"
 }
 
-resource "yandex_resourcemanager_folder_iam_member" "adm_function_invoker_iam" {
-  folder_id = var.folder_id
-  role      = "functions.functionInvoker"
-  member    = "serviceAccount:${data.yandex_iam_service_account.adm.id}"
+// Создание статического ключа доступа
+resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
+  service_account_id = yandex_iam_service_account.sa.id
+  description        = "Static access key for object storage"
 }
 
-# Создание бакетов для фотографий и лиц
+// Создание бакета для фотографий
 resource "yandex_storage_bucket" "photos_bucket" {
   bucket = var.photos_bucket
-  acl    = "private"
+  access_key            = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key            = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+  acl                   = "private"
+  default_storage_class = "standard"
+  max_size              = 5368709120 # 5GB
+
 }
 
+// Создание бакета для лиц
 resource "yandex_storage_bucket" "faces_bucket" {
   bucket = var.faces_bucket
-  acl    = "private"
+  access_key            = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key            = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+  acl                   = "private"
+  default_storage_class = "standard"
+  max_size              = 1073741824 # 1GB
 }
 
 # Создание очереди сообщений для задач
@@ -38,7 +49,7 @@ resource "yandex_function" "bot" {
   entrypoint         = "index.handler"
   memory             = "128"
   runtime            = "python312"
-  service_account_id = data.yandex_iam_service_account.adm.id
+  service_account_id = yandex_iam_service_account.sa.id  # Исправлено на sa.id
   user_hash          = "unique-user-hash"  # Уникальный хеш для вашего проекта
   environment = {
     TELEGRAM_BOT_TOKEN = var.tg_bot_key
@@ -47,22 +58,6 @@ resource "yandex_function" "bot" {
   content {
     zip_filename = data.archive_file.bot_source.output_path
   }
-
-}
-
-
-# Привязка прав для функции бота
-resource "yandex_function_iam_binding" "bot_iam" {
-  function_id = yandex_function.bot.id
-  role        = "functions.functionInvoker"
-  members = [
-    "system:allUsers",
-  ]
-}
-
-# Настройка Webhook для Telegram Bot
-resource "telegram_bot_webhook" "bot_webhook" {
-  url = "https://functions.yandexcloud.net/${yandex_function.bot.id}"
 }
 
 # Настройка API Gateway для работы с фотографиями лиц
@@ -87,9 +82,27 @@ paths:
         type: object_storage
         bucket: ${yandex_storage_bucket.faces_bucket.bucket}
         object: "{face}"
-        service_account_id: ${data.yandex_iam_service_account.adm.id}
+        service_account_id: ${yandex_iam_service_account.sa.id}  # Исправлено на sa.id
 EOT
 }
+
+
+
+# Привязка прав для функции бота
+resource "yandex_function_iam_binding" "bot_iam" {
+  function_id = yandex_function.bot.id
+  role        = "functions.functionInvoker"
+  members = [
+    "system:allUsers",
+  ]
+}
+
+# Настройка Webhook для Telegram Bot
+resource "telegram_bot_webhook" "bot_webhook" {
+  url = "https://functions.yandexcloud.net/${yandex_function.bot.id}"
+}
+
+
 
 # Архив с кодом для Telegram Bot
 data "archive_file" "bot_source" {

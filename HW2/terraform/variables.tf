@@ -1,3 +1,9 @@
+variable "sa_account" {
+  description = "ID сервизного аккаунта"
+  type        = string
+}
+
+
 variable "cloud_id" {
   description = "ID облака в Yandex Cloud"
   type        = string
@@ -8,17 +14,6 @@ variable "folder_id" {
   type        = string
 }
 
-variable "service_account_key_id" {
-  description = "ID статического ключа сервисного аккаунта"
-  type        = string
-  sensitive   = true
-}
-
-variable "service_account_secret" {
-  description = "Статический ключ сервисного аккаунта"
-  type        = string
-  sensitive   = true
-}
 
 variable "photos_bucket" {
   description = "Название бакета для оригинальных фотографий"
@@ -61,8 +56,35 @@ variable "db_name" {
   type        = string
 }
 
+variable "db_user" {
+  description = "Юзернэйм для бд"
+  type        = string
+  default = "karina"
+}
+
+variable "db_password" {
+  description = "Пароль для бд"
+  type        = string
+}
+
+variable "network_id" {
+  description = "ID сети для подключения ресурсов"
+  type        = string
+}
+
+variable "access_key" {
+  description = "Access key "
+  type        = string
+}
+
+variable "secret_key" {
+  description = "Secret key "
+  type        = string
+}
+
+
 variable "key_file_path" {
   type        = string
   description = "Ключ сервисного аккаунта"
-  default     = "~/.yc-keys/key.json"
+  default     = "/Users/karina/Desktop/VvOT/HW2/terraform/key.json"
 }

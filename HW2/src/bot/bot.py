@@ -1,60 +1,31 @@
-import logging
-import os
+import json
 import requests
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
 
-# Настройка логирования
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+def handler(event, context):
+    telegram_api_url = f"https://api.telegram.org/bot{event['environment']['TELEGRAM_BOT_TOKEN']}/sendPhoto"
+    data = json.loads(event["body"])
+    command = data.get("message", {}).get("text", "")
 
-# API Gateway URL
-API_GATEWAY_URL = os.getenv("API_GATEWAY_URL")
-
-
-# Команда для получения фотографии лица
-def get_face(update: Update, context: CallbackContext) -> None:
-    # Получаем фотографию лица с API
-    response = requests.get(f"{API_GATEWAY_URL}/?face=random_face_key")
-    if response.status_code == 200:
-        update.message.reply_photo(photo=response.content)
+    if command == "/getface":
+        face_image = get_face_image()
+        send_telegram_photo(telegram_api_url, face_image)
+    elif command.startswith("/find "):
+        name = command.split(" ")[1]
+        found_images = find_images_by_name(name)
+        send_telegram_message(telegram_api_url, found_images)
     else:
-        update.message.reply_text("Ошибка при получении фотографии.")
+        send_telegram_message(telegram_api_url, "Ошибка")
 
+def send_telegram_photo(api_url, image_url):
+    data = {
+        "chat_id": data["message"]["chat"]["id"],
+        "photo": image_url
+    }
+    requests.post(api_url, data=data)
 
-# Команда для поиска фотографий по имени
-def find_face(update: Update, context: CallbackContext) -> None:
-    name = context.args[0] if context.args else None
-    if not name:
-        update.message.reply_text("Укажите имя.")
-        return
-
-    # Поиск фотографий по имени
-    response = requests.get(f"{API_GATEWAY_URL}/find?name={name}")
-    if response.status_code == 200:
-        photos = response.json()
-        if photos:
-            for photo in photos:
-                update.message.reply_photo(photo=photo['url'])
-        else:
-            update.message.reply_text(f"Фотографии с именем {name} не найдены.")
-    else:
-        update.message.reply_text("Ошибка при поиске фотографий.")
-
-
-# Основная функция для запуска бота
-def main() -> None:
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-    updater = Updater(TELEGRAM_BOT_TOKEN)
-    dispatcher = updater.dispatcher
-
-    dispatcher.add_handler(CommandHandler("getface", get_face))
-    dispatcher.add_handler(CommandHandler("find", find_face))
-
-    updater.start_polling()
-    updater.idle()
-
-
-if __name__ == '__main__':
-    main()
+def send_telegram_message(api_url, message):
+    data = {
+        "chat_id": data["message"]["chat"]["id"],
+        "text": message
+    }
+    requests.post(api_url, data=data)

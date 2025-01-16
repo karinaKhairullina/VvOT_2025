@@ -1,15 +1,7 @@
 
-
-# Создание статического ключа доступа для сервисного аккаунта
-resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
-  service_account_id = var.sa_account
-}
-
-# Назначение роли для сервисного аккаунта
-resource "yandex_resourcemanager_folder_iam_member" "adm_function_invoker_iam" {
-  folder_id = var.folder_id
-  role      = "functions.functionInvoker"
-  member    = "serviceAccount:${var.sa_account}"
+# Создание сервисного аккаунта
+resource "yandex_iam_service_account" "sa" {
+  name = "vvot44-service-account"
 }
 
 # Создание бакетов для фотографий
@@ -17,32 +9,30 @@ resource "yandex_storage_bucket" "photos_bucket" {
   bucket               = var.photos_bucket
   acl                  = "private"
   default_storage_class = "standard"
-  max_size             = 5368709120
-  access_key           = yandex_iam_service_account_static_access_key.sa_static_key.access_key
-  secret_key           = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+  max_size             = 5368709120  
 }
 
-# Создание бакетов для лиц
 resource "yandex_storage_bucket" "faces_bucket" {
   bucket               = var.faces_bucket
   acl                  = "private"
   default_storage_class = "standard"
-  max_size             = 1073741824
-  access_key           = yandex_iam_service_account_static_access_key.sa_static_key.access_key
-  secret_key           = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+  max_size             = 1073741824 
 }
 
 # Очередь сообщений для задач
 resource "yandex_message_queue" "tasks_queue" {
   name        = var.queue_name
-  access_key  = yandex_iam_service_account_static_access_key.sa_static_key.access_key
-  secret_key  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key 
+  access_key  = var.service_account_key_id  
+  secret_key  = var.service_account_secret  
 }
+
 
 # Создание Yandex Database (serverless)
 resource "yandex_ydb_database_serverless" "database" {
-  name               = "vvot44-ydb-serverless"
-  folder_id          = var.folder_id  
+  name        = "vvot44-ydb-serverless"
+  folder_id   = var.folder_id  
+
+  # Включение защиты от удаления
   deletion_protection = true
 }
 
@@ -52,7 +42,7 @@ resource "yandex_function" "face_detection" {
   entrypoint         = "index.handler"
   memory             = "256"
   runtime            = "python312"
-  service_account_id = var.sa_account
+  service_account_id = yandex_iam_service_account.sa.id
   user_hash          = "face-detection-user" 
   content {
     zip_filename = data.archive_file.bot_source.output_path
@@ -66,7 +56,9 @@ resource "yandex_function_trigger" "photo_trigger" {
   
   function {
     id                 = yandex_function.face_detection.id
-    service_account_id = var.sa_account
+    service_account_id = yandex_iam_service_account.sa.id
+    retry_attempts     = 3
+    retry_interval     = 30
   }
 
   object_storage {
@@ -82,7 +74,7 @@ resource "yandex_function" "face_cut" {
   entrypoint         = "index.handler"
   memory             = "256"
   runtime            = "python312"
-  service_account_id = var.sa_account
+  service_account_id = yandex_iam_service_account.sa.id
   user_hash          = "face-cut-user"  
   content {
     zip_filename = data.archive_file.bot_source.output_path
@@ -93,19 +85,18 @@ resource "yandex_function" "face_cut" {
 resource "yandex_function_trigger" "task_trigger" {
   name        = "vvot44-task-trigger"
   description = "Trigger for task queue"
-
+  
   function {
     id                 = yandex_function.face_cut.id
-    service_account_id = var.sa_account
+    service_account_id = yandex_iam_service_account.sa.id
     retry_attempts     = 3
     retry_interval     = 30
   }
 
   message_queue {
-    queue_id           = yandex_message_queue.tasks_queue.arn
-    service_account_id = var.sa_account
-    batch_cutoff       = "0"                          
-    batch_size         = "1"  
+    queue_id           = yandex_message_queue.tasks_queue.id
+    service_account_id = yandex_iam_service_account.sa.id
+    batch_cutoff       = 100  
   }
 }
 
@@ -116,7 +107,7 @@ resource "yandex_function" "bot" {
   entrypoint         = "index.handler"
   memory             = "128"
   runtime            = "python312"
-  service_account_id = var.sa_account
+  service_account_id = yandex_iam_service_account.sa.id
   user_hash          = "bot-user" 
   environment = {
     TELEGRAM_BOT_TOKEN = var.tg_bot_key
@@ -149,14 +140,9 @@ paths:
         type: object_storage
         bucket: ${yandex_storage_bucket.faces_bucket.bucket}
         object: "{face}"
-        service_account_id: ${var.sa_account}
+        service_account_id: ${yandex_iam_service_account.sa.id}
 EOT
 }
-
-resource "telegram_bot_webhook" "tg_bot_webhook" {
-  url = "https://functions.yandexcloud.net/${yandex_function.bot.id}"
-}
-
 
 # Ресурс для создания архива с кодом
 data "archive_file" "bot_source" {
